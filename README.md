@@ -82,6 +82,8 @@ Opening `index.html` directly works too, but every layer will be in DEMO mode be
 
 Earthquakes need no key. Each claim check makes one Claude call, so cost scales with how many people use it; the endpoint also limits each visitor to 5 checks a minute.
 
+Netlify's AI Gateway injects its own `ANTHROPIC_API_KEY` into functions. Meridian ignores that injected key (it comes with an `ANTHROPIC_BASE_URL` pointing at the gateway), so "Describe it" stays off until you add your own key in Netlify's environment variables.
+
 ## Put it online
 
 1. Push this folder to a GitHub repo.

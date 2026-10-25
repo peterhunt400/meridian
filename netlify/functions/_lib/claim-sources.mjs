@@ -1,7 +1,7 @@
 // Claim checker: the network side. Claude for reading the claim, and the
 // three sensor sources for evidence. Pure logic lives in claim.mjs.
 
-import { fetchWithTimeout, HttpError } from "./util.mjs";
+import { fetchWithTimeout, HttpError, ownAnthropicKey } from "./util.mjs";
 import { EVENT_TYPES, bboxAround } from "./claim.mjs";
 import { firmsCsvToFeatures, openSkyToFeatures } from "./transforms.mjs";
 
@@ -31,7 +31,7 @@ const EXTRACT_TOOL = {
 };
 
 export async function extractClaim(text, now = new Date()) {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = ownAnthropicKey();
   if (!key) throw new HttpError(503, "Claim checker needs ANTHROPIC_API_KEY. See README.");
 
   const system = [

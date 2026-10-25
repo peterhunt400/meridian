@@ -4,7 +4,7 @@
 // Saves the request, starts the background check, and returns its id at once.
 // The page then polls /api/result?id=... and the id doubles as the share link.
 
-import { json, handleError, HttpError } from "./_lib/util.mjs";
+import { json, handleError, HttpError, ownAnthropicKey } from "./_lib/util.mjs";
 import { newId, saveCheck } from "./_lib/store.mjs";
 import { triggerRun } from "./_lib/trigger.mjs";
 import { normalizeManual } from "./_lib/claim.mjs";
@@ -53,7 +53,7 @@ export default async (req, context) => {
     if (rateLimited(context?.ip || "unknown")) throw new HttpError(429, "Too many checks. Wait a minute and try again.");
 
     const body = await req.json().catch(() => ({}));
-    const parsed = parseRequest(body, { aiAvailable: Boolean(process.env.ANTHROPIC_API_KEY) });
+    const parsed = parseRequest(body, { aiAvailable: Boolean(ownAnthropicKey()) });
 
     const id = newId();
     const record = { id, status: "pending", stage: "Queued", ...parsed, createdAt: new Date().toISOString() };

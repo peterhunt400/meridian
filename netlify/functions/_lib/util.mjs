@@ -19,6 +19,22 @@ export function inBbox([lon, lat], [w, s, e, n]) {
   return lon >= w && lon <= e && lat >= s && lat <= n;
 }
 
+// The Anthropic key to call api.anthropic.com with, or null. Netlify's AI Gateway
+// injects its own ANTHROPIC_API_KEY plus an ANTHROPIC_BASE_URL pointing at the
+// gateway; that key doesn't work against api.anthropic.com and would bill Netlify
+// credits, so it counts as no key. Set your own key in Netlify to turn AI mode on.
+export function ownAnthropicKey(env = process.env) {
+  const key = env.ANTHROPIC_API_KEY;
+  if (!key) return null;
+  const base = env.ANTHROPIC_BASE_URL;
+  if (!base) return key;
+  try {
+    return new URL(base).hostname === "api.anthropic.com" ? key : null;
+  } catch {
+    return null;
+  }
+}
+
 export class HttpError extends Error {
   constructor(status, message) {
     super(message);

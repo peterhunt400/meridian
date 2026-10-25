@@ -56,6 +56,15 @@ test("capabilities report keys without exposing them", () => {
   assert.ok(!JSON.stringify(caps).includes("secret"));
 });
 
+test("Netlify AI Gateway's injected Anthropic key doesn't turn AI mode on", () => {
+  assert.equal(capabilities({}).ai, false);
+  assert.equal(capabilities({ ANTHROPIC_API_KEY: "sk-ant-own" }).ai, true);
+  // The gateway injects its key together with a base URL pointing at itself.
+  assert.equal(capabilities({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: "https://ai-gateway.netlify.app/anthropic" }).ai, false);
+  assert.equal(capabilities({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: "not a url" }).ai, false);
+  assert.equal(capabilities({ ANTHROPIC_API_KEY: "sk-ant-own", ANTHROPIC_BASE_URL: "https://api.anthropic.com" }).ai, true);
+});
+
 test("manual check runs end to end and never calls the AI", async () => {
   let aiCalls = 0;
   const deps = {
