@@ -1,0 +1,11 @@
+# Secrets: API keys live here. Never commit.
+.env
+.env.*
+!.env.example
+
+# Netlify CLI local state (functions build, blobs, linked site id)
+.netlify
+
+node_modules/
+.DS_Store
+*.log

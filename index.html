@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Meridian</title>
+  <meta name="description" content="Live public-data intelligence map: aircraft, earthquakes and fires by region.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel" aria-label="Controls">
+      <header class="brand">
+        <div class="mark" aria-hidden="true"></div>
+        <div>
+          <h1>Meridian</h1>
+          <p class="sub">Open-source situational map</p>
+        </div>
+      </header>
+
+      <section class="block checker">
+        <h2 class="eyebrow">Check a claim</h2>
+        <div class="modes" role="tablist" aria-label="How to enter the claim">
+          <button type="button" role="tab" id="mode-ai" aria-selected="true" aria-controls="claim-form">Describe it</button>
+          <button type="button" role="tab" id="mode-manual" aria-selected="false" aria-controls="manual-form">Pick on map</button>
+        </div>
+
+        <form id="claim-form" class="claim-form" role="tabpanel" aria-labelledby="mode-ai">
+          <textarea id="claim-input" rows="3" maxlength="600" aria-label="Claim to check" placeholder="Paste a claim, e.g. “Large explosion reported at the port of Haifa last night”"></textarea>
+          <p class="hint" id="ai-unavailable" hidden>Describing a claim in words needs an Anthropic API key. Use <strong>Pick on map</strong> for now.</p>
+          <div class="examples" id="claim-examples"></div>
+        </form>
+
+        <form id="manual-form" class="claim-form manual" role="tabpanel" aria-labelledby="mode-manual" hidden>
+          <div class="field">
+            <span class="field-label">Where</span>
+            <p class="pick" id="pick-readout">Click the map to set the spot</p>
+            <input id="manual-place" type="text" maxlength="120" placeholder="Place name (optional), e.g. Port of Haifa" aria-label="Place name">
+          </div>
+          <div class="row">
+            <label class="field">
+              <span class="field-label">What</span>
+              <select id="manual-type">
+                <option value="explosion">Explosion</option>
+                <option value="airstrike">Airstrike</option>
+                <option value="fire">Fire</option>
+                <option value="earthquake">Earthquake</option>
+                <option value="aircraft_incident">Aircraft incident</option>
+                <option value="ship_incident">Ship incident</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Search radius</span>
+              <select id="manual-radius">
+                <option value="3">3 km · site</option>
+                <option value="5" selected>5 km · area</option>
+                <option value="15">15 km · city</option>
+                <option value="50">50 km · region</option>
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label">When</span>
+            <select id="manual-window">
+              <option value="6">Last 6 hours</option>
+              <option value="24" selected>Last 24 hours</option>
+              <option value="72">Last 3 days</option>
+              <option value="168">Last 7 days</option>
+              <option value="custom">Custom…</option>
+            </select>
+          </label>
+          <div class="row" id="custom-window" hidden>
+            <label class="field"><span class="field-label">From</span><input id="manual-start" type="datetime-local"></label>
+            <label class="field"><span class="field-label">To</span><input id="manual-end" type="datetime-local"></label>
+          </div>
+        </form>
+
+        <div class="claim-actions">
+          <button id="claim-submit" type="button" class="primary">Check against sensors</button>
+          <button id="claim-clear" type="button" hidden>Clear</button>
+        </div>
+        <div id="claim-result" class="claim-result" aria-live="polite" hidden></div>
+      </section>
+
+      <section class="block">
+        <label class="eyebrow" for="region">Area of interest</label>
+        <div class="region-row">
+          <select id="region"></select>
+          <button id="use-view" type="button" title="Load data for exactly what the map is showing">Use view</button>
+        </div>
+        <p class="bbox" id="bbox-readout"></p>
+      </section>
+
+      <section class="block">
+        <h2 class="eyebrow">Layers</h2>
+        <ul class="layers" id="layers"></ul>
+      </section>
+
+      <section class="block grow">
+        <div class="signals-head">
+          <h2 class="eyebrow">Signals</h2>
+          <span class="count" id="signal-count">0</span>
+        </div>
+        <ol class="signals" id="signals"></ol>
+      </section>
+
+      <footer class="foot" id="foot">
+        Data: OpenSky Network, USGS, NASA FIRMS. Basemap © CARTO, © OpenStreetMap contributors.
+      </footer>
+    </aside>
+
+    <main class="map-wrap">
+      <div id="map" role="application" aria-label="Map"></div>
+      <div class="hud" id="hud" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
