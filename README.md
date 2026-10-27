@@ -17,7 +17,7 @@ Paste a claim, like *"Large explosion reported at the port of Haifa last night"*
 
 1. **Read the claim.** Claude turns the text into structured fields: event type, place, coordinates, search radius and time window.
 2. **Pick the sensors that could see it.** Explosions and airstrikes: satellite heat detection and seismic sensors. Fires: satellites. Earthquakes: seismic. Aircraft incidents: live transponders (recent claims only).
-3. **Pull the evidence** from NASA FIRMS, USGS and OpenSky for that exact circle and window.
+3. **Pull the evidence** from NASA FIRMS, USGS and OpenSky (or adsb.lol / adsb.fi) for that exact circle and window.
 4. **Decide the verdict by fixed rules, not by the AI:**
    - **Supported** – two independent sensors agree, or a strong single signal
    - **Some data is consistent** – one weaker signal
@@ -78,9 +78,11 @@ Opening `index.html` directly works too, but every layer will be in DEMO mode be
 | `AISSTREAM_API_KEY` | Ship sensor (free) | https://aisstream.io, sign in with GitHub, then API Keys |
 | `CDSE_CLIENT_ID` / `CDSE_CLIENT_SECRET` | Satellite images (free) | Copernicus Data Space account, then an OAuth client in the Sentinel Hub dashboard |
 | `FIRMS_MAP_KEY` | Fires and claim checker (required) | https://firms.modaps.eosdis.nasa.gov/api/map_key/ |
-| `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` | Aircraft (optional, raises the daily limit) | Create an OpenSky account, then Account > API client |
+| `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` | Aircraft (optional, raises OpenSky's daily limit when running locally) | Create an OpenSky account, then Account > API client |
 
 Earthquakes need no key. Each claim check makes one Claude call, so cost scales with how many people use it; the endpoint also limits each visitor to 5 checks a minute.
+
+**Aircraft on Netlify.** OpenSky doesn't accept connections from Netlify's servers, so no OpenSky key helps there. `/api/flights` tries OpenSky for 5 seconds, then falls back to the free community feeds [adsb.lol](https://api.adsb.lol/docs) and [adsb.fi](https://github.com/adsbfi/opendata). Those only answer for a 250 nm circle around a point, so a region is covered with up to 8 circles. The Middle East, Red Sea, Europe and Global views are bigger than that, so their aircraft coverage is partial (`meta.coverage` says so). Both feeds limit requests per IP (adsb.lol: 4 a second, 60 a minute, 500 a day; adsb.fi: 1 a second), so answers are cached at the CDN for 60 seconds.
 
 Netlify's AI Gateway injects its own `ANTHROPIC_API_KEY` into functions. Meridian ignores that injected key (it comes with an `ANTHROPIC_BASE_URL` pointing at the gateway), so "Describe it" stays off until you add your own key in Netlify's environment variables.
 

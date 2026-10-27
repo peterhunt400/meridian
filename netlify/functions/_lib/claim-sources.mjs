@@ -3,7 +3,8 @@
 
 import { fetchWithTimeout, HttpError, ownAnthropicKey } from "./util.mjs";
 import { EVENT_TYPES, bboxAround } from "./claim.mjs";
-import { firmsCsvToFeatures, openSkyToFeatures } from "./transforms.mjs";
+import { firmsCsvToFeatures } from "./transforms.mjs";
+import { fetchAircraft } from "./aircraft.mjs";
 
 const MODEL = process.env.CLAIM_MODEL || "claude-sonnet-5-5";
 
@@ -99,7 +100,5 @@ export async function fetchSeismic(claim) {
 
 // Live aircraft around the point (only used for very recent claims).
 export async function fetchFlightsNow(claim) {
-  const [w, s, e, n] = bboxAround(claim.lat, claim.lon, claim.radiusKm);
-  const url = `https://opensky-network.org/api/states/all?lamin=${s}&lomin=${w}&lamax=${n}&lomax=${e}`;
-  return openSkyToFeatures(await (await fetchWithTimeout(url)).json());
+  return (await fetchAircraft(bboxAround(claim.lat, claim.lon, claim.radiusKm))).features;
 }

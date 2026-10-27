@@ -89,3 +89,76 @@ test("demo data stays inside every region", () => {
     assert.equal(demoFlights(r.bbox).length, 70);
   }
 });
+
+test("ADS-B feeds become the same flight features, deduped and clipped to the box", async () => {
+  const { adsbToFeatures } = await import("../netlify/functions/_lib/transforms.mjs");
+  const lol = { ac: [
+    { hex: "738065", flight: "ELY001  ", lat: 32.01, lon: 34.88, alt_baro: 33000, alt_geom: 33150, gs: 447.4, track: 271.6, squawk: "2201", emergency: "none", seen_pos: 2 },
+    { hex: "abc123", flight: "TST9    ", lat: 31.7, lon: 35.9, alt_baro: 3000, gs: 120, track: 90, squawk: "1200", emergency: "general", seen_pos: 1 },
+    { hex: "~0a1b2c", lat: 31.9, lon: 34.9, alt_baro: "ground", gs: 3, seen_pos: 1 },
+    { hex: "farout", flight: "FAR1", lat: 45, lon: 10, alt_baro: 30000 },
+    { hex: "nopos", flight: "NOPOS" },
+  ] };
+  const fi = { aircraft: [{ hex: "738065", flight: "ELY001  ", lat: 32.02, lon: 34.9, alt_baro: 33000, gs: 447, track: 272, seen_pos: 0.5 }] };
+  const f = adsbToFeatures([lol, fi], LEVANT);
+  assert.deepEqual(f.map((x) => x.properties.id).sort(), ["0a1b2c", "738065", "abc123"], "inside the box, once each");
+  assert.equal(f[0].properties.emergency, "General emergency", "emergency field counts, and sorts first");
+  const ely = f.find((x) => x.properties.id === "738065");
+  assert.deepEqual(ely.geometry.coordinates, [34.9, 32.02], "freshest position wins");
+  assert.equal(ely.properties.callsign, "ELY001");
+  assert.equal(ely.properties.altitudeFt, 33000);
+  const ground = f.find((x) => x.properties.id === "0a1b2c").properties;
+  assert.equal(ground.onGround, true);
+  assert.equal(ground.callsign, "0A1B2C");
+});
+
+test("aircraft fallback covers a box with ≤250 nm circles", async () => {
+  const { coverCircles } = await import("../netlify/functions/_lib/aircraft.mjs");
+  const levant = coverCircles(LEVANT);
+  assert.equal(levant.complete, true);
+  assert.ok(levant.circles.length <= 4 && levant.circles.every((c) => c.radiusNm <= 250));
+  const small = coverCircles([34.9, 32.7, 35.1, 32.9]);
+  assert.equal(small.circles.length, 1);
+  assert.ok(small.circles[0].radiusNm < 15, "small boxes ask for a small circle");
+  const me = coverCircles([25, 12, 63, 42]);
+  assert.equal(me.complete, false, "too big for 8 circles is reported as partial");
+  assert.ok(me.circles.length <= 8);
+  for (const { lat, lon } of me.circles) assert.ok(lon > 25 && lon < 63 && lat > 12 && lat < 42);
+});
+
+test("aircraft: OpenSky unreachable falls back to adsb.lol, then adsb.fi", async () => {
+  const { fetchAircraft } = await import("../netlify/functions/_lib/aircraft.mjs");
+  const realFetch = globalThis.fetch;
+  const asked = [];
+  const ac = [{ hex: "738065", flight: "ELY001", lat: 32.8, lon: 35.0, alt_baro: 9000, gs: 250, track: 10 }];
+  try {
+    globalThis.fetch = async (url) => {
+      const host = new URL(url).host;
+      asked.push(host);
+      if (host === "opensky-network.org") throw Object.assign(new TypeError("fetch failed"), { cause: { code: "UND_ERR_CONNECT_TIMEOUT" } });
+      if (host === "api.adsb.lol") return Response.json({ ac });
+      throw new Error("unexpected " + host);
+    };
+    const lol = await fetchAircraft([34.9, 32.7, 35.1, 32.9]);
+    assert.equal(lol.meta.source, "adsb.lol");
+    assert.equal(lol.meta.coverage, "full");
+    assert.equal(lol.features[0].properties.callsign, "ELY001");
+
+    // adsb.lol rate-limited: adsb.fi picks the circle up.
+    globalThis.fetch = async (url) => {
+      const host = new URL(url).host;
+      if (host === "opensky-network.org") throw new TypeError("fetch failed");
+      if (host === "api.adsb.lol") return new Response("slow down", { status: 429 });
+      return Response.json({ aircraft: ac });
+    };
+    const fi = await fetchAircraft([34.9, 32.7, 35.1, 32.9]);
+    assert.equal(fi.meta.source, "adsb.fi");
+    assert.equal(fi.features.length, 1);
+
+    globalThis.fetch = async () => { throw new TypeError("fetch failed"); };
+    await assert.rejects(fetchAircraft([34.9, 32.7, 35.1, 32.9]));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(asked, ["opensky-network.org", "api.adsb.lol"]);
+});

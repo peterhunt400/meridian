@@ -42,7 +42,55 @@ export function openSkyToFeatures(data, limit = 2500) {
       },
     });
   }
-  // Emergencies first so they always survive the cap.
+  return emergenciesFirst(features, limit);
+}
+
+// The emergency field ADS-B transponders report alongside (or instead of) a squawk.
+const ADSB_EMERGENCIES = {
+  general: "General emergency", nordo: "Radio failure", unlawful: "Unlawful interference",
+  lifeguard: "Medical emergency", minfuel: "Minimum fuel", downed: "Aircraft down",
+};
+
+// adsb.lol / adsb.fi (ADSBExchange v2 format). Takes one or more responses, since
+// a box is fetched as several overlapping circles: keeps aircraft inside the box,
+// once each (the freshest position wins). Units are already feet and knots.
+export function adsbToFeatures(responses, bbox, limit = 2500) {
+  const latest = new Map();
+  for (const data of [].concat(responses)) {
+    for (const a of data?.ac || data?.aircraft || []) {
+      if (typeof a.lon !== "number" || typeof a.lat !== "number" || !a.hex) continue;
+      if (!inBbox([a.lon, a.lat], bbox)) continue;
+      const prev = latest.get(a.hex);
+      if (prev && (prev.seen_pos ?? 99) <= (a.seen_pos ?? 99)) continue;
+      latest.set(a.hex, a);
+    }
+  }
+  const features = [...latest.values()].map((a) => {
+    const squawk = a.squawk || null;
+    const onGround = a.alt_baro === "ground";
+    const altFt = typeof a.alt_geom === "number" ? a.alt_geom : typeof a.alt_baro === "number" ? a.alt_baro : onGround ? 0 : null;
+    const hex = a.hex.replace(/^~/, "");
+    return {
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [round(a.lon, 4), round(a.lat, 4)] },
+      properties: {
+        id: hex,
+        callsign: (a.flight || "").trim() || hex.toUpperCase(),
+        country: "Unknown", // this format has no country of registration
+        altitudeFt: altFt == null ? null : Math.round(altFt),
+        speedKt: typeof a.gs === "number" ? Math.round(a.gs) : null,
+        heading: Math.round(a.track ?? a.true_heading ?? 0),
+        onGround,
+        squawk,
+        emergency: EMERGENCY_SQUAWKS[squawk] || ADSB_EMERGENCIES[a.emergency] || null,
+      },
+    };
+  });
+  return emergenciesFirst(features, limit);
+}
+
+// Emergencies first so they always survive the cap.
+function emergenciesFirst(features, limit) {
   features.sort((a, b) => Number(Boolean(b.properties.emergency)) - Number(Boolean(a.properties.emergency)));
   return features.slice(0, limit);
 }
