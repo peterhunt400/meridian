@@ -1,7 +1,7 @@
 // Live aircraft for a box, used by the map layer and by aircraft claim checks.
 // OpenSky first. Netlify's servers can't reach OpenSky at all (connections time out
 // before any credentials are sent), so in production we fall back to two community
-// ADS-B feeds, adsb.lol and adsb.fi. They answer from the cloud but only for
+// ADS-B feeds, adsb.fi and then adsb.lol. They answer from the cloud but only for
 // "aircraft within 250 nm of a point", so a box is covered with a few circles.
 
 import { fetchWithTimeout, HttpError } from "./util.mjs";
@@ -15,11 +15,14 @@ const MAX_CIRCLES = 8;             // keeps one map refresh well inside the feed
 const KM_PER_NM = 1.852;
 const USER_AGENT = "Meridian (+https://github.com/peterhunt400/meridian)";
 
-// Each feed's per-IP limit, as the minimum gap between request starts.
-// adsb.lol: 4/s, 60/min, 500/day. adsb.fi: 1/s.
+// Tried in order; a circle one feed can't answer goes to the next. adsb.fi first:
+// since Oct 2026 adsb.lol answers every point query with an empty 400 (its terms
+// say an API key will become required), so it stays only as the backup.
+// intervalMs is each feed's per-IP limit, as the minimum gap between request starts.
+// adsb.fi: 1/s. adsb.lol: 4/s, 60/min, 500/day.
 const ADSB_FEEDS = [
-  { name: "adsb.lol", intervalMs: 350, url: (c) => `https://api.adsb.lol/v2/point/${c.lat}/${c.lon}/${c.radiusNm}` },
   { name: "adsb.fi", intervalMs: 1050, url: (c) => `https://opendata.adsb.fi/api/v2/lat/${c.lat}/lon/${c.lon}/dist/${c.radiusNm}` },
+  { name: "adsb.lol", intervalMs: 350, url: (c) => `https://api.adsb.lol/v2/point/${c.lat}/${c.lon}/${c.radiusNm}` },
 ];
 
 let cachedToken = null; // { value, expiresAt } — survives between calls on a warm function

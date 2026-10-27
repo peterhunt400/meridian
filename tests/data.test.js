@@ -126,7 +126,7 @@ test("aircraft fallback covers a box with ≤250 nm circles", async () => {
   for (const { lat, lon } of me.circles) assert.ok(lon > 25 && lon < 63 && lat > 12 && lat < 42);
 });
 
-test("aircraft: OpenSky unreachable falls back to adsb.lol, then adsb.fi", async () => {
+test("aircraft: OpenSky unreachable falls back to adsb.fi, then adsb.lol", async () => {
   const { fetchAircraft } = await import("../netlify/functions/_lib/aircraft.mjs");
   const realFetch = globalThis.fetch;
   const asked = [];
@@ -136,31 +136,31 @@ test("aircraft: OpenSky unreachable falls back to adsb.lol, then adsb.fi", async
       const host = new URL(url).host;
       asked.push(host);
       if (host === "opensky-network.org") throw Object.assign(new TypeError("fetch failed"), { cause: { code: "UND_ERR_CONNECT_TIMEOUT" } });
-      if (host === "api.adsb.lol") return Response.json({ ac });
+      if (host === "opendata.adsb.fi") return Response.json({ aircraft: ac });
       throw new Error("unexpected " + host);
-    };
-    const lol = await fetchAircraft([34.9, 32.7, 35.1, 32.9]);
-    assert.equal(lol.meta.source, "adsb.lol");
-    assert.equal(lol.meta.coverage, "full");
-    assert.equal(lol.features[0].properties.callsign, "ELY001");
-
-    // adsb.lol rate-limited: adsb.fi picks the circle up.
-    globalThis.fetch = async (url) => {
-      const host = new URL(url).host;
-      if (host === "opensky-network.org") throw new TypeError("fetch failed");
-      if (host === "api.adsb.lol") return new Response("slow down", { status: 429 });
-      return Response.json({ aircraft: ac });
     };
     const fi = await fetchAircraft([34.9, 32.7, 35.1, 32.9]);
     assert.equal(fi.meta.source, "adsb.fi");
-    assert.equal(fi.features.length, 1);
+    assert.equal(fi.meta.coverage, "full");
+    assert.equal(fi.features[0].properties.callsign, "ELY001");
+
+    // adsb.fi rate-limited: adsb.lol picks the circle up.
+    globalThis.fetch = async (url) => {
+      const host = new URL(url).host;
+      if (host === "opensky-network.org") throw new TypeError("fetch failed");
+      if (host === "opendata.adsb.fi") return new Response("slow down", { status: 429 });
+      return Response.json({ ac });
+    };
+    const lol = await fetchAircraft([34.9, 32.7, 35.1, 32.9]);
+    assert.equal(lol.meta.source, "adsb.lol");
+    assert.equal(lol.features.length, 1);
 
     globalThis.fetch = async () => { throw new TypeError("fetch failed"); };
     await assert.rejects(fetchAircraft([34.9, 32.7, 35.1, 32.9]));
   } finally {
     globalThis.fetch = realFetch;
   }
-  assert.deepEqual(asked, ["opensky-network.org", "api.adsb.lol"]);
+  assert.deepEqual(asked, ["opensky-network.org", "opendata.adsb.fi"]);
 
   // After a failure, OpenSky is skipped for a while rather than timing out on every request.
   const hosts = [];
@@ -170,7 +170,7 @@ test("aircraft: OpenSky unreachable falls back to adsb.lol, then adsb.fi", async
   } finally {
     globalThis.fetch = realFetch;
   }
-  assert.deepEqual(hosts, ["api.adsb.lol"]);
+  assert.deepEqual(hosts, ["opendata.adsb.fi"]);
 });
 
 test("FIRMS keeps only detections since the cut-off, before applying the cap", () => {
