@@ -1,10 +1,38 @@
 # Meridian
 
-A live situational map built from public data. Pick an area of interest (Middle East by default, or anywhere via **Use view**) and Meridian pulls in live aircraft, earthquakes and satellite fire detections, then surfaces the few things worth a human's attention as **signals**: aircraft squawking emergency codes, M4.5+ earthquakes, and clusters of fire detections.
+**Check a claim against the planet.**
 
-It's modelled on how platforms like Palantir Gotham work: ingest messy feeds, normalize them into one shape, and put an analysis layer on top.
+When something happens in the world, the first reports are on social media, and many of them are wrong. Meridian takes a claim like *"Explosion reported at the port of Haifa last night"* and checks it against physical sensors at that exact place and time: NASA satellite heat detection, the USGS seismic network, live aircraft transponders and live ship transponders. You get a verdict, every finding behind it, the limits of what the sensors could see, and before/after satellite images. Then a permanent link to share it.
 
-## The claim checker
+**Live:** https://meridian-osint.netlify.app
+
+![Meridian confirming a fire claim near Guarda, Portugal: six satellite heat detections inside the 25 km search circle](docs/screenshot.png)
+
+## What makes it different
+
+- **The AI reads, the rules decide.** Claude only turns the claim's text into a place, a time window and an event type. The verdict comes from fixed, inspectable rules in code, so it can't be talked into a conclusion the data doesn't support.
+- **It still works with the AI unplugged.** "Pick on map" mode skips the AI entirely: click the spot, choose the event and the window, and the same engine runs.
+- **It says what it can't see.** Every verdict lists its caveats: satellite pass timing, cloud cover, weak ship and aircraft coverage in the Eastern Mediterranean. "No signal found" is never presented as "it didn't happen."
+- **Results can't be edited.** Each check is stored server-side with a permanent link, so a shared verdict is the verdict the sensors produced.
+
+## Sensors
+
+| Sensor | Source | What it catches |
+| --- | --- | --- |
+| Heat from space | NASA FIRMS (VIIRS satellites) | Fires, explosions, strikes that leave heat |
+| Ground shaking | USGS | Earthquakes, large blasts |
+| Aircraft | adsb.fi, adsb.lol, OpenSky | Emergency squawk codes (7500, 7600, 7700) |
+| Ships | aisstream.io (AIS) | Vessels aground, not under command, emergency beacons |
+| Imagery | Copernicus Sentinel-2 | Before/after photos, 10 m per pixel |
+| Language | Claude (Anthropic) | Reading the claim, nothing else |
+
+## The live map
+
+Pick an area (Middle East by default, or anywhere with **Use view**) and Meridian shows live aircraft, earthquakes and fire detections, and surfaces the few things worth a human's attention as **signals**: emergency squawks, M4.5+ earthquakes and clusters of fire detections. It's modelled on how platforms like Palantir Gotham work: ingest messy feeds, normalize them into one shape, put an analysis layer on top.
+
+Built with plain JavaScript and MapLibre, Netlify Functions and Blobs, and 35 automated tests. Built by Peter Hunt, with Claude as a coding partner.
+
+## How the claim checker works
 
 Two ways in:
 
