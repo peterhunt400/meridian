@@ -37,6 +37,21 @@ export async function updateCheck(id, patch) {
   return next;
 }
 
+// Daily counter for AI claim reads billed to Netlify credits. Best effort: two
+// checks at the same instant can both squeeze in, which is fine for a soft cap.
+function usageKey(now) { return `usage-ai-${new Date(now).toISOString().slice(0, 10)}`; }
+
+export async function aiUsedToday(now = Date.now()) {
+  const v = await (await load()).checks.get(usageKey(now), { type: "json" });
+  return Number(v?.count) || 0;
+}
+
+export async function recordAiUse(now = Date.now()) {
+  const count = (await aiUsedToday(now)) + 1;
+  await (await load()).checks.setJSON(usageKey(now), { count });
+  return count;
+}
+
 export async function saveImage(id, which, bytes) {
   await (await load()).images.set(`${id}-${which}`, bytes);
 }

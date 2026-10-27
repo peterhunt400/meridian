@@ -9,7 +9,7 @@ It's modelled on how platforms like Palantir Gotham work: ingest messy feeds, no
 Two ways in:
 
 - **Pick on map (no AI):** click the spot, choose the event type, search radius and time window. No Anthropic key needed. This is the default when no key is set.
-- **Describe it (AI):** paste a claim in plain words and Claude turns it into the same structured fields. Needs `ANTHROPIC_API_KEY`.
+- **Describe it (AI):** paste a claim in plain words and Claude turns it into the same structured fields. Uses your own `ANTHROPIC_API_KEY` if set; otherwise Netlify's built-in AI Gateway (no Anthropic account needed, billed in Netlify credits, capped at 50 reads a day).
 
 Both feed the same verification engine. The AI is only an input shortcut: remove it and every check still works.
 
@@ -82,9 +82,9 @@ Opening `index.html` directly works too, but every layer will be in DEMO mode be
 
 Earthquakes need no key. Each claim check makes one Claude call, so cost scales with how many people use it; the endpoint also limits each visitor to 5 checks a minute.
 
-**Aircraft on Netlify.** OpenSky doesn't accept connections from Netlify's servers, so no OpenSky key helps there. `/api/flights` tries OpenSky for 5 seconds, then falls back to the free community feeds [adsb.lol](https://api.adsb.lol/docs) and [adsb.fi](https://github.com/adsbfi/opendata). Those only answer for a 250 nm circle around a point, so a region is covered with up to 8 circles. The Middle East, Red Sea, Europe and Global views are bigger than that, so their aircraft coverage is partial (`meta.coverage` says so). Both feeds limit requests per IP (adsb.lol: 4 a second, 60 a minute, 500 a day; adsb.fi: 1 a second), so answers are cached at the CDN for 60 seconds.
+**Aircraft on Netlify.** OpenSky doesn't accept connections from Netlify's servers, so no OpenSky key helps there. `/api/flights` tries OpenSky for 5 seconds, then falls back to the free community feeds [adsb.lol](https://api.adsb.lol/docs) and [adsb.fi](https://github.com/adsbfi/opendata). Those only answer for a 250 nm circle around a point, so a region is covered with up to 8 circles. The Middle East, Red Sea, Europe and Global views are bigger than that, so their coverage is partial: the 8 circles are aimed at the busiest airports (each one placed to take in the most airport traffic not already covered), and the layer shows **PARTIAL** instead of LIVE. Pick a smaller area or use "Use view" to see every plane. Both feeds limit requests per IP (adsb.lol: 4 a second, 60 a minute, 500 a day; adsb.fi: 1 a second), so answers are cached at the CDN for 60 seconds.
 
-Netlify's AI Gateway injects its own `ANTHROPIC_API_KEY` into functions. Meridian ignores that injected key (it comes with an `ANTHROPIC_BASE_URL` pointing at the gateway), so "Describe it" stays off until you add your own key in Netlify's environment variables.
+**AI on Netlify.** Netlify's AI Gateway injects its own `ANTHROPIC_API_KEY` plus an `ANTHROPIC_BASE_URL` pointing at the gateway. Meridian uses it when you haven't set your own key: it calls `claude-haiku-5-5` (a claim read costs roughly 0.03 Netlify credits) and stops at `AI_DAILY_LIMIT` reads a day (default 50) so the free plan's 300 monthly credits can't run dry. Set your own `ANTHROPIC_API_KEY` to use Anthropic directly with a stronger model, or `MERIDIAN_AI=off` to disable AI mode.
 
 ## Put it online
 

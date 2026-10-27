@@ -35,6 +35,30 @@ export function ownAnthropicKey(env = process.env) {
   }
 }
 
+// Which Claude to use for reading claims, or null when AI mode is off.
+//   1. Your own ANTHROPIC_API_KEY (pay Anthropic directly; best model).
+//   2. Netlify's AI Gateway: no Anthropic account, card or ID needed. Usage comes out
+//      of your Netlify credits, so it uses the cheapest capable model and a daily cap.
+// Set MERIDIAN_AI=off in Netlify to turn AI mode off completely.
+export function aiProvider(env = process.env) {
+  if (String(env.MERIDIAN_AI || "").toLowerCase() === "off") return null;
+  const own = ownAnthropicKey(env);
+  if (own) {
+    return { via: "anthropic", baseUrl: "https://api.anthropic.com", key: own, model: env.CLAIM_MODEL || "claude-sonnet-5-5", dailyLimit: null };
+  }
+  if (env.ANTHROPIC_API_KEY && env.ANTHROPIC_BASE_URL && /^https:\/\/[^\s]+$/.test(env.ANTHROPIC_BASE_URL)) {
+    const limit = env.AI_DAILY_LIMIT === undefined || env.AI_DAILY_LIMIT === "" ? NaN : Number(env.AI_DAILY_LIMIT);
+    return {
+      via: "netlify",
+      baseUrl: env.ANTHROPIC_BASE_URL.replace(/\/+$/, ""),
+      key: env.ANTHROPIC_API_KEY,
+      model: env.CLAIM_MODEL || "claude-haiku-5-5",
+      dailyLimit: Number.isFinite(limit) && limit >= 0 ? limit : 50,
+    };
+  }
+  return null;
+}
+
 export class HttpError extends Error {
   constructor(status, message) {
     super(message);

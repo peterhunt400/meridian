@@ -183,3 +183,17 @@ test("FIRMS keeps only detections since the cut-off, before applying the cap", (
   assert.deepEqual(f.map((x) => x.properties.detectedAt), ["2026-10-26T23:50:00Z", "2026-10-27T03:30:00Z"]);
   assert.equal(firmsCsvToFeatures(csv).length, 7, "no cut-off keeps everything");
 });
+
+test("big areas aim their circles at busy airports", async () => {
+  const { coverCircles } = await import("../netlify/functions/_lib/aircraft.mjs");
+  const me = coverCircles([25, 12, 63, 42]);
+  const hubs = me.circles.map((c) => c.hub);
+  assert.equal(me.circles.length, 8);
+  const within = (c, lat, lon) => Math.hypot(c.lat - lat, (c.lon - lon) * Math.cos((lat * Math.PI) / 180)) * 111.32 <= 463;
+  assert.ok(me.circles.some((c) => within(c, 25.25, 55.36)), "Dubai is covered");
+  assert.ok(me.circles.some((c) => within(c, 32.01, 34.89)), "Tel Aviv is covered");
+  assert.ok(me.circles.some((c) => within(c, 41.26, 28.74)), "Istanbul is covered");
+  assert.equal(new Set(hubs).size, hubs.length, "no airport picked twice");
+  // Small areas still use the even grid, untouched.
+  assert.ok(coverCircles([32, 29, 39.5, 37.5]).circles.every((c) => !c.hub));
+});

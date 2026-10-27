@@ -2,11 +2,11 @@
 // Tells the page which features have keys configured, so it can show the
 // right claim checker mode. Never returns the keys themselves.
 
-import { json, ownAnthropicKey } from "./_lib/util.mjs";
+import { json, aiProvider } from "./_lib/util.mjs";
 
 export function capabilities(env = process.env) {
   return {
-    ai: Boolean(ownAnthropicKey(env)),
+    ai: Boolean(aiProvider(env)),
     sensors: {
       fires: Boolean(env.FIRMS_MAP_KEY),
       seismic: true,

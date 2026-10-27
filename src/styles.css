@@ -62,6 +62,7 @@ button:hover, select:hover { border-color: var(--muted); }
 .layer .n { font: 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); }
 .pill { font: 500 10px/1 var(--mono); letter-spacing: .08em; padding: 4px 6px; border-radius: 4px; border: 1px solid currentColor; }
 .pill.live { color: #5be38c; }
+.pill.live.partial { color: #a8d08d; border-style: dashed; }
 .pill.demo { color: var(--quake); }
 .pill.loading { color: var(--muted); }
 

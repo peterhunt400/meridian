@@ -47,7 +47,8 @@ async function fromOpenSky([w, s, e, n]) {
 }
 
 // Pure: circles (≤ 250 nm) whose union covers the box. When the box needs more
-// than `max`, spread `max` circles evenly and report the coverage as incomplete.
+// than `max`, aim the circles at the busiest airports (see aimAtTraffic) and
+// report the coverage as incomplete.
 export function coverCircles([w, s, e, n], max = MAX_CIRCLES) {
   const radiusKm = MAX_RADIUS_NM * KM_PER_NM;
   const widestLat = s <= 0 && n >= 0 ? 0 : Math.min(Math.abs(s), Math.abs(n)); // boxes are widest nearest the equator
@@ -71,17 +72,87 @@ export function coverCircles([w, s, e, n], max = MAX_CIRCLES) {
 
   const cellHalfDiagKm = Math.hypot(widthKm / nx, heightKm / ny) / 2;
   const radiusNm = Math.max(1, Math.min(MAX_RADIUS_NM, Math.ceil(cellHalfDiagKm / KM_PER_NM)));
-  const circles = [];
+  const grid = [];
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
-      circles.push({
+      grid.push({
         lat: round3(s + ((j + 0.5) * (n - s)) / ny),
         lon: round3(w + ((i + 0.5) * (e - w)) / nx),
         radiusNm,
       });
     }
   }
-  return { circles, complete };
+  if (complete) return { circles: grid, complete };
+  return { circles: aimAtTraffic([w, s, e, n], grid, max), complete };
+}
+
+// Busy airports, with a rough weight (millions of passengers a year). When a box
+// is too big to cover, circles go where the planes are instead of empty desert.
+export const HUBS = [
+  // Middle East and neighbours
+  ["DXB", 25.25, 55.36, 87], ["IST", 41.26, 28.74, 80], ["DOH", 25.27, 51.61, 52], ["JED", 21.68, 39.16, 49],
+  ["SAW", 40.90, 29.31, 41], ["AYT", 36.90, 30.80, 38], ["RUH", 24.96, 46.70, 37], ["CAI", 30.12, 31.41, 32],
+  ["ATH", 37.94, 23.94, 31], ["AUH", 24.43, 54.65, 29], ["TLV", 32.01, 34.89, 21], ["SHJ", 25.33, 55.52, 17],
+  ["KWI", 29.24, 47.97, 15], ["MCT", 23.59, 58.28, 15], ["THR", 35.69, 51.31, 15], ["ESB", 40.13, 32.99, 14],
+  ["ADB", 38.29, 27.16, 12], ["DMM", 26.47, 49.80, 11], ["MED", 24.55, 39.70, 10], ["IKA", 35.42, 51.15, 10],
+  ["MHD", 36.24, 59.64, 10], ["KHI", 24.91, 67.16, 10], ["BAH", 26.27, 50.63, 9], ["AMM", 31.72, 35.99, 9],
+  ["LCA", 34.88, 33.63, 9], ["HRG", 27.18, 33.80, 9], ["SSH", 27.98, 34.39, 8], ["BEY", 33.82, 35.49, 7],
+  ["BGW", 33.26, 44.23, 7], ["EBL", 36.24, 43.96, 3],
+  // Europe
+  ["LHR", 51.47, -0.45, 83], ["CDG", 49.01, 2.55, 70], ["AMS", 52.31, 4.76, 66], ["MAD", 40.47, -3.56, 66],
+  ["FRA", 50.03, 8.56, 62], ["BCN", 41.30, 2.08, 55], ["FCO", 41.80, 12.25, 50], ["LGW", 51.15, -0.19, 43],
+  ["MUC", 48.35, 11.79, 41], ["LIS", 38.77, -9.13, 35], ["DUB", 53.42, -6.27, 33], ["ZRH", 47.46, 8.55, 31],
+  ["VIE", 48.11, 16.57, 31], ["CPH", 55.62, 12.65, 30], ["OSL", 60.19, 11.10, 25], ["ARN", 59.65, 17.92, 25],
+  ["BRU", 50.90, 4.48, 24], ["WAW", 52.17, 20.97, 21],
+  // North America
+  ["ATL", 33.64, -84.43, 105], ["DFW", 32.90, -97.04, 81], ["ORD", 41.98, -87.90, 80], ["DEN", 39.86, -104.67, 77],
+  ["LAX", 33.94, -118.41, 75], ["JFK", 40.64, -73.78, 62], ["MIA", 25.80, -80.29, 55], ["SFO", 37.62, -122.38, 50],
+  ["SEA", 47.45, -122.31, 50], ["EWR", 40.69, -74.17, 49], ["YYZ", 43.68, -79.62, 46], ["MSP", 44.88, -93.22, 37],
+  ["DTW", 42.21, -83.35, 33], ["YVR", 49.19, -123.18, 26], ["YUL", 45.47, -73.74, 21], ["MDW", 41.79, -87.75, 20],
+  ["CLE", 41.41, -81.85, 10], ["PIT", 40.49, -80.23, 9], ["YOW", 45.32, -75.67, 5], ["BUF", 42.94, -78.73, 5],
+  // Rest of the world
+  ["HND", 35.55, 139.78, 85], ["DEL", 28.56, 77.10, 73], ["CAN", 23.39, 113.30, 63], ["SIN", 1.36, 103.99, 59],
+  ["ICN", 37.46, 126.44, 56], ["CGK", -6.13, 106.66, 55], ["PVG", 31.14, 121.81, 54], ["PEK", 40.08, 116.58, 53],
+  ["BOM", 19.09, 72.87, 52], ["BKK", 13.69, 100.75, 51], ["KUL", 2.75, 101.71, 47], ["GRU", -23.43, -46.47, 41],
+  ["HKG", 22.31, 113.91, 40], ["SYD", -33.94, 151.18, 38], ["JNB", -26.14, 28.24, 19],
+];
+
+// Pure: pick up to `max` full-size circles. Each one is centred on the airport
+// whose circle would take in the most not-yet-covered airport traffic (so one
+// circle can catch a cluster like Tel Aviv + Amman + Beirut). Leftover slots go
+// to the evenly spread grid circles furthest from anything chosen.
+export function aimAtTraffic([w, s, e, n], grid, max) {
+  const radiusKm = MAX_RADIUS_NM * KM_PER_NM;
+  const hubs = HUBS.filter(([, lat, lon]) => lat >= s && lat <= n && lon >= w && lon <= e);
+  const reach = new Map(hubs.map(([code, lat, lon]) => [code,
+    hubs.filter(([, la, lo]) => km([lon, lat], [lo, la]) <= radiusKm)]));
+  const chosen = [];
+  const covered = new Set();
+  while (chosen.length < max) {
+    let best = null, bestGain = 0;
+    for (const [code, lat, lon] of hubs) {
+      const gain = reach.get(code).reduce((sum, h) => sum + (covered.has(h[0]) ? 0 : h[3]), 0);
+      if (gain > bestGain) { best = { code, lat, lon }; bestGain = gain; }
+    }
+    if (!best) break;
+    chosen.push({ lat: best.lat, lon: best.lon, radiusNm: MAX_RADIUS_NM, hub: best.code });
+    for (const h of reach.get(best.code)) covered.add(h[0]);
+  }
+  const rest = grid
+    .map((c) => ({ ...c, radiusNm: MAX_RADIUS_NM, gap: Math.min(Infinity, ...chosen.map((h) => km([c.lon, c.lat], [h.lon, h.lat]))) }))
+    .filter((c) => c.gap > radiusKm)
+    .sort((a, b) => b.gap - a.gap);
+  for (const c of rest) {
+    if (chosen.length >= max) break;
+    chosen.push({ lat: c.lat, lon: c.lon, radiusNm: c.radiusNm });
+  }
+  return chosen;
+}
+
+function km([lon1, lat1], [lon2, lat2]) {
+  const r = (d) => (d * Math.PI) / 180;
+  const a = Math.sin(r(lat2 - lat1) / 2) ** 2 + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(r(lon2 - lon1) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(a));
 }
 
 async function fromAdsbFeeds(bbox, deadline) {

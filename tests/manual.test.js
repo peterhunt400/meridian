@@ -56,13 +56,59 @@ test("capabilities report keys without exposing them", () => {
   assert.ok(!JSON.stringify(caps).includes("secret"));
 });
 
-test("Netlify AI Gateway's injected Anthropic key doesn't turn AI mode on", () => {
+test("AI mode: own Anthropic key first, Netlify AI Gateway as the no-card fallback", async () => {
+  const { aiProvider } = await import("../netlify/functions/_lib/util.mjs");
   assert.equal(capabilities({}).ai, false);
   assert.equal(capabilities({ ANTHROPIC_API_KEY: "sk-ant-own" }).ai, true);
+  const own = aiProvider({ ANTHROPIC_API_KEY: "sk-ant-own", ANTHROPIC_BASE_URL: "https://api.anthropic.com" });
+  assert.equal(own.via, "anthropic");
+  assert.equal(own.dailyLimit, null, "your own key has no Meridian-side cap");
+
   // The gateway injects its key together with a base URL pointing at itself.
-  assert.equal(capabilities({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: "https://ai-gateway.netlify.app/anthropic" }).ai, false);
+  const gw = aiProvider({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: "https://ai-gateway.netlify.app/anthropic/" });
+  assert.equal(gw.via, "netlify");
+  assert.equal(gw.baseUrl, "https://ai-gateway.netlify.app/anthropic");
+  assert.equal(gw.model, "claude-haiku-5-5", "cheapest capable model on Netlify credits");
+  assert.equal(gw.dailyLimit, 50);
+  assert.equal(aiProvider({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: "https://x/a", AI_DAILY_LIMIT: "5" }).dailyLimit, 5);
   assert.equal(capabilities({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: "not a url" }).ai, false);
-  assert.equal(capabilities({ ANTHROPIC_API_KEY: "sk-ant-own", ANTHROPIC_BASE_URL: "https://api.anthropic.com" }).ai, true);
+  assert.equal(capabilities({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: "https://x/a", MERIDIAN_AI: "off" }).ai, false);
+});
+
+test("Netlify-billed AI reads stop at the daily cap", async () => {
+  const { aiUsedToday, recordAiUse } = await import("../netlify/functions/_lib/store.mjs");
+  setStores(memoryStores());
+  const day = Date.parse("2026-10-27T12:00:00Z");
+  assert.equal(await aiUsedToday(day), 0);
+  await recordAiUse(day); await recordAiUse(day);
+  assert.equal(await aiUsedToday(day), 2);
+  assert.equal(await aiUsedToday(day + 24 * H), 0, "resets the next UTC day");
+});
+
+test("extractClaim talks to whichever provider it's given", async () => {
+  const { extractClaim } = await import("../netlify/functions/_lib/claim-sources.mjs");
+  const realFetch = globalThis.fetch;
+  let seen;
+  globalThis.fetch = async (url, opts) => {
+    seen = { url, body: JSON.parse(opts.body), key: opts.headers["x-api-key"] };
+    return new Response(JSON.stringify({ content: [{ type: "tool_use", name: "record_claim", input: { checkable: true } }] }));
+  };
+  try {
+    const out = await extractClaim("Explosion at Haifa port", new Date(NOW),
+      { via: "netlify", baseUrl: "https://gw.example/anthropic", key: "gw", model: "claude-haiku-5-5" });
+    assert.equal(out.checkable, true);
+    assert.equal(seen.url, "https://gw.example/anthropic/v1/messages");
+    assert.equal(seen.key, "gw");
+    assert.equal(seen.body.model, "claude-haiku-5-5");
+    assert.equal(seen.body.tools[0].strict, undefined, "no strict flag through the gateway");
+    await extractClaim("Explosion at Haifa port", new Date(NOW),
+      { via: "anthropic", baseUrl: "https://api.anthropic.com", key: "own", model: "claude-sonnet-5-5" });
+    assert.equal(seen.url, "https://api.anthropic.com/v1/messages");
+    assert.equal(seen.body.tools[0].strict, true);
+    await assert.rejects(extractClaim("x", new Date(NOW), null), /Pick on map/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("manual check runs end to end and never calls the AI", async () => {

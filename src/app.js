@@ -12,6 +12,7 @@ const state = {
   enabled: { flights: true, quakes: true, fires: true },
   data: { flights: [], quakes: [], fires: [] },
   status: { flights: "loading", quakes: "loading", fires: "loading" },
+  meta: {},
   updated: {},
   timers: {},
   loadToken: 0,
@@ -100,6 +101,7 @@ async function refresh(key, token) {
   if (token !== state.loadToken) return;
   state.data[key] = result.features;
   state.status[key] = result.mode;
+  state.meta[key] = result.meta || {};
   state.updated[key] = new Date();
   map.getSource(key)?.setData({ type: "FeatureCollection", features: result.features });
   render();
@@ -159,9 +161,12 @@ function render() {
   for (const key of Object.keys(FEEDS)) {
     const pill = $(`pill-${key}`);
     const st = state.status[key];
-    pill.className = `pill ${st}`;
-    pill.textContent = st === "live" ? "LIVE" : st === "demo" ? "DEMO" : "…";
-    pill.title = st === "demo" ? "Live feed unavailable, showing generated sample data" : "";
+    pill.className = `pill ${st}${st === "live" && state.meta[key]?.coverage === "partial" ? " partial" : ""}`;
+    const partial = st === "live" && state.meta[key]?.coverage === "partial";
+    pill.textContent = st === "live" ? (partial ? "PARTIAL" : "LIVE") : st === "demo" ? "DEMO" : "…";
+    pill.title = st === "demo" ? "Live feed unavailable, showing generated sample data"
+      : partial ? "Live, but this area is too big to cover fully: showing the busiest airspace. Pick a smaller area or use \"Use view\" for every plane."
+      : "";
     $(`n-${key}`).textContent = st === "loading" ? "–" : state.data[key].length.toLocaleString("en-CA");
   }
 

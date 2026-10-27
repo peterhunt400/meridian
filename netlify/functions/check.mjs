@@ -4,8 +4,8 @@
 // Saves the request, starts the background check, and returns its id at once.
 // The page then polls /api/result?id=... and the id doubles as the share link.
 
-import { json, handleError, HttpError, ownAnthropicKey } from "./_lib/util.mjs";
-import { newId, saveCheck } from "./_lib/store.mjs";
+import { json, handleError, HttpError, aiProvider } from "./_lib/util.mjs";
+import { newId, saveCheck, aiUsedToday, recordAiUse } from "./_lib/store.mjs";
 import { triggerRun } from "./_lib/trigger.mjs";
 import { normalizeManual } from "./_lib/claim.mjs";
 
@@ -40,7 +40,7 @@ export function parseRequest(body, { aiAvailable, now = Date.now() }) {
   }
   const text = String(body?.claim || "").trim();
   if (!aiAvailable) {
-    throw new HttpError(503, "Describing a claim in words needs an Anthropic API key. Use Pick on map instead.");
+    throw new HttpError(503, "Describing a claim in words isn't switched on for this site. Use Pick on map instead.");
   }
   if (text.length < 8) throw new HttpError(400, "Write out the claim, including a place and roughly when.");
   if (text.length > MAX_CHARS) throw new HttpError(400, `Keep the claim under ${MAX_CHARS} characters.`);
@@ -53,7 +53,15 @@ export default async (req, context) => {
     if (rateLimited(context?.ip || "unknown")) throw new HttpError(429, "Too many checks. Wait a minute and try again.");
 
     const body = await req.json().catch(() => ({}));
-    const parsed = parseRequest(body, { aiAvailable: Boolean(ownAnthropicKey()) });
+    const provider = aiProvider();
+    const parsed = parseRequest(body, { aiAvailable: Boolean(provider) });
+    // AI reads billed to Netlify credits have a daily cap so the free plan can't run dry.
+    if (parsed.mode === "ai" && provider.dailyLimit != null) {
+      if ((await aiUsedToday()) >= provider.dailyLimit) {
+        throw new HttpError(429, "Today's quota for describing claims in words is used up. Use Pick on map, or try again tomorrow.");
+      }
+      await recordAiUse();
+    }
 
     const id = newId();
     const record = { id, status: "pending", stage: "Queued", ...parsed, createdAt: new Date().toISOString() };
