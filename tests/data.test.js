@@ -161,4 +161,14 @@ test("aircraft: OpenSky unreachable falls back to adsb.lol, then adsb.fi", async
     globalThis.fetch = realFetch;
   }
   assert.deepEqual(asked, ["opensky-network.org", "api.adsb.lol"]);
+
+  // After a failure, OpenSky is skipped for a while rather than timing out on every request.
+  const hosts = [];
+  try {
+    globalThis.fetch = async (url) => { hosts.push(new URL(url).host); return Response.json({ ac }); };
+    await fetchAircraft([34.9, 32.7, 35.1, 32.9]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(hosts, ["api.adsb.lol"]);
 });

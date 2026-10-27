@@ -118,12 +118,20 @@ async function fromAdsbFeeds(bbox, deadline) {
   };
 }
 
+// Once OpenSky fails, a warm function skips it for a while instead of waiting
+// out its timeout on every request.
+const OPENSKY_RETRY_MS = 10 * 60_000;
+let openSkyDownUntil = 0;
+
 // Returns { features, meta } with meta.source naming whichever feed answered.
 export async function fetchAircraft(bbox) {
-  try {
-    return await fromOpenSky(bbox);
-  } catch (err) {
-    console.warn(`OpenSky unavailable, using ADS-B feeds: ${err.cause?.code || err.message}`);
+  if (Date.now() >= openSkyDownUntil) {
+    try {
+      return await fromOpenSky(bbox);
+    } catch (err) {
+      openSkyDownUntil = Date.now() + OPENSKY_RETRY_MS;
+      console.warn(`OpenSky unavailable, using ADS-B feeds for ${OPENSKY_RETRY_MS / 60_000} min: ${err.cause?.code || err.message}`);
+    }
   }
   return fromAdsbFeeds(bbox, Date.now() + ADSB_DEADLINE_MS);
 }
