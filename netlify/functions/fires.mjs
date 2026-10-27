@@ -11,9 +11,11 @@ export default async (req) => {
     const key = process.env.FIRMS_MAP_KEY;
     if (!key) throw new HttpError(503, "Fire layer needs FIRMS_MAP_KEY. See README.");
     const [w, s, e, n] = parseBbox(req.url);
-    const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}/VIIRS_NOAA20_NRT/${w},${s},${e},${n}/1`;
+    // FIRMS's day range counts calendar days in UTC ("1" is today only, nearly empty
+    // just after midnight UTC), so ask for two days and keep the last 24 hours.
+    const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}/VIIRS_NOAA20_NRT/${w},${s},${e},${n}/2`;
     const res = await fetchWithTimeout(url, {}, 20000);
-    const features = firmsCsvToFeatures(await res.text());
+    const features = firmsCsvToFeatures(await res.text(), 4000, Date.now() - 24 * 3600_000);
     return json(featureCollection(features, { source: "NASA FIRMS (VIIRS NOAA-20)", window: "24 hours" }), { cacheSeconds: 900 });
   } catch (err) {
     return handleError(err);

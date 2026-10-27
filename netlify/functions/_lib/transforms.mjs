@@ -121,7 +121,8 @@ export function usgsToFeatures(data, bbox, minMag = 2.5) {
 }
 
 // NASA FIRMS area API returns CSV. Header row names the columns.
-export function firmsCsvToFeatures(csv, limit = 4000) {
+// `since` (ms) drops older detections before the cap, so the cap never cuts recent ones.
+export function firmsCsvToFeatures(csv, limit = 4000, since = 0) {
   const lines = String(csv || "").trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const head = lines[0].split(",");
@@ -136,13 +137,15 @@ export function firmsCsvToFeatures(csv, limit = 4000) {
     const lon = Number(c[iLon]);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
     const t = String(c[iTime] || "").padStart(4, "0");
+    const detectedAt = c[iDate] ? `${c[iDate]}T${t.slice(0, 2)}:${t.slice(2)}:00Z` : null;
+    if (since && !(Date.parse(detectedAt) >= since)) continue;
     out.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
       properties: {
         id: `fire-${lat}-${lon}-${c[iDate]}-${t}`,
         frp: iFrp >= 0 ? Number(c[iFrp]) || 0 : 0, // fire radiative power, MW
-        detectedAt: c[iDate] ? `${c[iDate]}T${t.slice(0, 2)}:${t.slice(2)}:00Z` : null,
+        detectedAt,
         confidence: iConf >= 0 ? c[iConf] : null,
         daynight: iDn >= 0 ? c[iDn] : null,
       },

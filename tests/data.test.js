@@ -172,3 +172,14 @@ test("aircraft: OpenSky unreachable falls back to adsb.lol, then adsb.fi", async
   }
   assert.deepEqual(hosts, ["api.adsb.lol"]);
 });
+
+test("FIRMS keeps only detections since the cut-off, before applying the cap", () => {
+  const head = "latitude,longitude,frp,acq_date,acq_time,confidence,daynight";
+  const old = Array.from({ length: 5 }, (_, i) => `31.${i},34.5,10,2026-10-26,0100,n,N`);
+  const recent = ["31.9,34.6,20,2026-10-26,2350,n,N", "32.0,34.7,30,2026-10-27,0330,n,N"];
+  const csv = [head, ...old, ...recent].join("\n");
+  const since = Date.parse("2026-10-26T04:00:00Z");
+  const f = firmsCsvToFeatures(csv, 2, since);
+  assert.deepEqual(f.map((x) => x.properties.detectedAt), ["2026-10-26T23:50:00Z", "2026-10-27T03:30:00Z"]);
+  assert.equal(firmsCsvToFeatures(csv).length, 7, "no cut-off keeps everything");
+});
