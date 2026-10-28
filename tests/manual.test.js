@@ -75,6 +75,56 @@ test("AI mode: own Anthropic key first, Netlify AI Gateway as the no-card fallba
   assert.equal(capabilities({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: "https://x/a", MERIDIAN_AI: "off" }).ai, false);
 });
 
+test("AI Gateway is detected from either injected pair, process.env or Netlify.env", async () => {
+  const { aiProvider, runtimeEnv } = await import("../netlify/functions/_lib/util.mjs");
+  const GW = "https://meridian-osint.netlify.app/.netlify/ai";
+
+  // Only the always-injected NETLIFY_AI_GATEWAY_* pair: still the gateway, same URL.
+  const fallback = aiProvider({ NETLIFY_AI_GATEWAY_KEY: "gw", NETLIFY_AI_GATEWAY_URL: `${GW}/` });
+  assert.equal(fallback.via, "netlify");
+  assert.equal(fallback.baseUrl, GW);
+  assert.equal(fallback.key, "gw");
+
+  // The gateway's key without its base URL is not "your own key" for api.anthropic.com.
+  assert.equal(aiProvider({ ANTHROPIC_API_KEY: "gw", NETLIFY_AI_GATEWAY_KEY: "gw", NETLIFY_AI_GATEWAY_URL: GW }).via, "netlify");
+  assert.equal(aiProvider({ ANTHROPIC_API_KEY: "gw", ANTHROPIC_BASE_URL: ` ${GW}\n` }).baseUrl, GW, "stray whitespace is trimmed");
+
+  // Variables visible only through Netlify.env still count.
+  const netlifyEnv = new Map([["NETLIFY_AI_GATEWAY_KEY", "gw"], ["NETLIFY_AI_GATEWAY_URL", GW]]);
+  assert.equal(capabilities(runtimeEnv({ FIRMS_MAP_KEY: "f" }, netlifyEnv)).ai, true);
+  assert.equal(capabilities(runtimeEnv({}, { get() { throw new Error("outside a request"); } })).ai, false);
+  assert.equal(runtimeEnv({ MERIDIAN_AI: "off" }, netlifyEnv).MERIDIAN_AI, "off");
+});
+
+test("a negative AI answer is never cached by the CDN", async () => {
+  const { capabilitiesResponse } = await import("../netlify/functions/capabilities.mjs");
+  const on = capabilitiesResponse({ NETLIFY_AI_GATEWAY_KEY: "gw", NETLIFY_AI_GATEWAY_URL: "https://gw.example" });
+  assert.equal((await on.json()).ai, true);
+  assert.match(on.headers.get("netlify-cdn-cache-control"), /s-maxage=60/);
+
+  const warn = console.warn;
+  const logged = [];
+  console.warn = (msg) => logged.push(msg);
+  try {
+    const off = capabilitiesResponse({ FIRMS_MAP_KEY: "secret-value" });
+    assert.equal((await off.json()).ai, false);
+    assert.equal(off.headers.get("netlify-cdn-cache-control"), null);
+    assert.equal(off.headers.get("cache-control"), "no-store");
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(logged.length, 1, "AI off is logged with variable names");
+  assert.ok(!logged[0].includes("secret-value"), "never values");
+});
+
+test("a shared check Claude read never says AI mode is switched off", async () => {
+  const { aiAvailabilityView } = await import("../src/checker.js");
+  assert.equal(aiAvailabilityView(false, "ai").hintHidden, true);
+  assert.equal(aiAvailabilityView(false, "manual").hintHidden, false);
+  assert.equal(aiAvailabilityView(false, null).hintHidden, false);
+  assert.deepEqual(aiAvailabilityView(true, null), { hintHidden: true, inputDisabled: false, examplesHidden: false });
+});
+
 test("Netlify-billed AI reads stop at the daily cap", async () => {
   const { aiUsedToday, recordAiUse } = await import("../netlify/functions/_lib/store.mjs");
   setStores(memoryStores());

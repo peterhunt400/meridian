@@ -17,7 +17,7 @@ const POLL_LIMIT_MS = 4 * 60_000;
 const HOUR = 3600_000;
 const $ = (id) => document.getElementById(id);
 
-const ui = { mode: "ai", aiAvailable: true, pick: null, busy: false };
+const ui = { mode: "ai", aiAvailable: true, sharedMode: null, pick: null, busy: false };
 let pollTimer = null;
 let currentId = null;
 let mapRef = null;
@@ -77,6 +77,8 @@ export function initChecker(map) {
     $("claim-result").hidden = true;
     $("claim-clear").hidden = true;
     setLink(null);
+    ui.sharedMode = null;
+    renderAiAvailability();
     ui.pick = null;
     renderPick();
     clearMap();
@@ -94,21 +96,44 @@ export function initChecker(map) {
   }
 }
 
+async function fetchAiAvailable() {
+  const res = await fetch("/api/capabilities", { cache: "no-store" });
+  if (!res.ok) throw new Error();
+  return Boolean((await res.json()).ai);
+}
+
 async function loadCapabilities() {
   try {
-    const res = await fetch("/api/capabilities");
-    if (!res.ok) throw new Error();
-    const caps = await res.json();
-    ui.aiAvailable = Boolean(caps.ai);
+    ui.aiAvailable = await fetchAiAvailable();
+    // "Off" can be one server instance missing its variables; ask once more before believing it.
+    if (!ui.aiAvailable) {
+      await new Promise((r) => setTimeout(r, 1000));
+      ui.aiAvailable = await fetchAiAvailable();
+    }
   } catch {
     // Opened without the server (e.g. straight from a file): manual mode can't run either,
     // but default to it so the page explains itself when the check is attempted.
     ui.aiAvailable = false;
   }
-  $("ai-unavailable").hidden = ui.aiAvailable;
-  $("claim-input").disabled = !ui.aiAvailable;
-  $("claim-examples").hidden = !ui.aiAvailable;
+  renderAiAvailability();
   if (!ui.aiAvailable && !new URLSearchParams(location.search).get("check")) setMode("manual");
+}
+
+// What the "Describe it" form shows. sharedMode is the mode of the shared check on
+// screen, if any: a check Claude read proves AI mode works, so never call it switched off.
+export function aiAvailabilityView(aiAvailable, sharedMode) {
+  return {
+    hintHidden: aiAvailable || sharedMode === "ai",
+    inputDisabled: !aiAvailable,
+    examplesHidden: !aiAvailable,
+  };
+}
+
+function renderAiAvailability() {
+  const view = aiAvailabilityView(ui.aiAvailable, ui.sharedMode);
+  $("ai-unavailable").hidden = view.hintHidden;
+  $("claim-input").disabled = view.inputDisabled;
+  $("claim-examples").hidden = view.examplesHidden;
 }
 
 function setMode(mode) {
@@ -248,6 +273,8 @@ let restoredFor = null;
 function restoreInputs(rec) {
   if (restoredFor === rec.id) return;
   restoredFor = rec.id;
+  ui.sharedMode = rec.mode;
+  renderAiAvailability();
   if (rec.mode === "manual" && rec.manual) {
     setMode("manual");
     const m = rec.manual;

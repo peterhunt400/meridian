@@ -2,9 +2,9 @@
 // Tells the page which features have keys configured, so it can show the
 // right claim checker mode. Never returns the keys themselves.
 
-import { json, aiProvider } from "./_lib/util.mjs";
+import { json, aiProvider, aiVarNames, runtimeEnv } from "./_lib/util.mjs";
 
-export function capabilities(env = process.env) {
+export function capabilities(env = runtimeEnv()) {
   return {
     ai: Boolean(aiProvider(env)),
     sensors: {
@@ -17,33 +17,20 @@ export function capabilities(env = process.env) {
   };
 }
 
-// TEMPORARY DIAGNOSTIC: env var NAMES only, never values.
-const BOOT = Date.now();
-let calls = 0;
-const WATCH = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "NETLIFY_AI_GATEWAY_KEY", "NETLIFY_AI_GATEWAY_URL", "OPENAI_API_KEY", "OPENAI_BASE_URL", "FIRMS_MAP_KEY", "AISSTREAM_API_KEY"];
-function diag(req) {
-  const nenv = globalThis.Netlify?.env;
-  const p = WATCH.filter((n) => process.env[n]).join(",") || "-";
-  let ne = "n/a";
-  if (nenv) ne = WATCH.filter((n) => { try { return nenv.get(n); } catch { return false; } }).join(",") || "-";
-  const aiNames = Object.keys(process.env).filter((n) => /AI_GATEWAY|ANTHROPIC|NETLIFY_AI/i.test(n)).join(",") || "-";
-  let urlShape = "-";
-  try { const u = process.env.ANTHROPIC_BASE_URL; if (u) urlShape = new URL(u).protocol; } catch { urlShape = "bad"; }
-  calls += 1;
-  const e = process.env;
-  const gu = (e.NETLIFY_AI_GATEWAY_URL || "").replace(/\/+$/, "");
-  const ab = (e.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
-  // Booleans and the URL path suffix only; the gateway URL is not a secret, keys are never printed.
-  const pair = `keySame=${e.ANTHROPIC_API_KEY === e.NETLIFY_AI_GATEWAY_KEY} baseStartsGw=${Boolean(gu) && ab.startsWith(gu)} baseSuffix=${gu && ab.startsWith(gu) ? ab.slice(gu.length) || "(none)" : "?"} baseRegexOk=${/^https:\/\/[^\s]+$/.test(e.ANTHROPIC_BASE_URL || "")}`;
-  return `diag call=${calls} ageMs=${Date.now() - BOOT} ua=${(req.headers.get("user-agent") || "").slice(0, 60)} process.env=[${p}] Netlify.env=[${ne}] aiNames=[${aiNames}] baseProto=${urlShape} ai=${Boolean(aiProvider())} ${pair}`;
+// Only a positive answer goes in the CDN cache. "AI off" may be one invocation
+// missing its variables, and caching it would hand Pick-on-map mode to every
+// visitor for the next minute.
+export function capabilitiesResponse(env = runtimeEnv()) {
+  const caps = capabilities(env);
+  if (!caps.ai) {
+    console.warn(`capabilities: AI off. AI variables set: process.env [${aiVarNames(process.env).join(", ")}], with Netlify.env [${aiVarNames(env).join(", ")}]`);
+  }
+  if (caps.ai) return json(caps, { cacheSeconds: 60 });
+  const res = json(caps);
+  res.headers.set("cache-control", "no-store");
+  return res;
 }
 
-export default async (req) => {
-  const line = diag(req);
-  console.log(line);
-  const res = json(capabilities(), { cacheSeconds: 60 });
-  res.headers.set("x-meridian-diag", line.replace(/ ua=.*? process/, " process"));
-  return res;
-};
+export default async () => capabilitiesResponse();
 
 export const config = { path: "/api/capabilities" };
