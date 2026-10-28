@@ -2,9 +2,9 @@
 // Tells the page which features have keys configured, so it can show the
 // right claim checker mode. Never returns the keys themselves.
 
-import { json, aiProvider } from "./_lib/util.mjs";
+import { json, aiProvider, aiVarNames, runtimeEnv } from "./_lib/util.mjs";
 
-export function capabilities(env = process.env) {
+export function capabilities(env = runtimeEnv()) {
   return {
     ai: Boolean(aiProvider(env)),
     sensors: {
@@ -17,6 +17,20 @@ export function capabilities(env = process.env) {
   };
 }
 
-export default async () => json(capabilities(), { cacheSeconds: 60 });
+// Only a positive answer goes in the CDN cache. "AI off" may be one invocation
+// missing its variables, and caching it would hand Pick-on-map mode to every
+// visitor for the next minute.
+export function capabilitiesResponse(env = runtimeEnv()) {
+  const caps = capabilities(env);
+  if (!caps.ai) {
+    console.warn(`capabilities: AI off. AI variables set: process.env [${aiVarNames(process.env).join(", ")}], with Netlify.env [${aiVarNames(env).join(", ")}]`);
+  }
+  if (caps.ai) return json(caps, { cacheSeconds: 60 });
+  const res = json(caps);
+  res.headers.set("cache-control", "no-store");
+  return res;
+}
+
+export default async () => capabilitiesResponse();
 
 export const config = { path: "/api/capabilities" };

@@ -25,7 +25,7 @@ export function inBbox([lon, lat], [w, s, e, n]) {
 // credits, so it counts as no key. Set your own key in Netlify to turn AI mode on.
 export function ownAnthropicKey(env = process.env) {
   const key = env.ANTHROPIC_API_KEY;
-  if (!key) return null;
+  if (!key || key === env.NETLIFY_AI_GATEWAY_KEY) return null;
   const base = env.ANTHROPIC_BASE_URL;
   if (!base) return key;
   try {
@@ -35,23 +35,60 @@ export function ownAnthropicKey(env = process.env) {
   }
 }
 
+// The variables AI mode reads. Netlify exposes them on process.env, and also on
+// Netlify.env inside functions; runtimeEnv() takes either, so a gap in one doesn't
+// switch AI mode off.
+const AI_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "NETLIFY_AI_GATEWAY_KEY", "NETLIFY_AI_GATEWAY_URL", "MERIDIAN_AI", "CLAIM_MODEL", "AI_DAILY_LIMIT"];
+
+export function runtimeEnv(env = process.env, netlifyEnv = globalThis.Netlify?.env) {
+  const merged = { ...env };
+  for (const name of AI_VARS) {
+    if (merged[name] || !netlifyEnv) continue;
+    try {
+      const value = netlifyEnv.get(name);
+      if (value) merged[name] = value;
+    } catch {
+      // Netlify.env can throw outside a request; process.env is all there is then.
+    }
+  }
+  return merged;
+}
+
+// Which AI env var names are set (never their values), for logs.
+export function aiVarNames(env = runtimeEnv()) {
+  return AI_VARS.filter((name) => env[name]);
+}
+
+const httpsUrl = (value) => (/^https:\/\/\S+$/.test(String(value || "").trim()) ? String(value).trim().replace(/\/+$/, "") : null);
+
+// Netlify AI Gateway credentials: the ANTHROPIC_* pair it injects, or else the
+// NETLIFY_AI_GATEWAY_KEY / NETLIFY_AI_GATEWAY_URL pair it always injects alongside
+// (on Netlify the two pairs hold the same key and the same URL).
+function gatewayCredentials(env) {
+  const base = httpsUrl(env.ANTHROPIC_BASE_URL);
+  if (env.ANTHROPIC_API_KEY && base) return { key: env.ANTHROPIC_API_KEY, baseUrl: base };
+  const gateway = httpsUrl(env.NETLIFY_AI_GATEWAY_URL);
+  if (env.NETLIFY_AI_GATEWAY_KEY && gateway) return { key: env.NETLIFY_AI_GATEWAY_KEY, baseUrl: gateway };
+  return null;
+}
+
 // Which Claude to use for reading claims, or null when AI mode is off.
 //   1. Your own ANTHROPIC_API_KEY (pay Anthropic directly; best model).
 //   2. Netlify's AI Gateway: no Anthropic account, card or ID needed. Usage comes out
 //      of your Netlify credits, so it uses the cheapest capable model and a daily cap.
 // Set MERIDIAN_AI=off in Netlify to turn AI mode off completely.
-export function aiProvider(env = process.env) {
+export function aiProvider(env = runtimeEnv()) {
   if (String(env.MERIDIAN_AI || "").toLowerCase() === "off") return null;
   const own = ownAnthropicKey(env);
   if (own) {
     return { via: "anthropic", baseUrl: "https://api.anthropic.com", key: own, model: env.CLAIM_MODEL || "claude-sonnet-5-5", dailyLimit: null };
   }
-  if (env.ANTHROPIC_API_KEY && env.ANTHROPIC_BASE_URL && /^https:\/\/[^\s]+$/.test(env.ANTHROPIC_BASE_URL)) {
+  const gateway = gatewayCredentials(env);
+  if (gateway) {
     const limit = env.AI_DAILY_LIMIT === undefined || env.AI_DAILY_LIMIT === "" ? NaN : Number(env.AI_DAILY_LIMIT);
     return {
       via: "netlify",
-      baseUrl: env.ANTHROPIC_BASE_URL.replace(/\/+$/, ""),
-      key: env.ANTHROPIC_API_KEY,
+      ...gateway,
       model: env.CLAIM_MODEL || "claude-haiku-5-5",
       dailyLimit: Number.isFinite(limit) && limit >= 0 ? limit : 50,
     };
