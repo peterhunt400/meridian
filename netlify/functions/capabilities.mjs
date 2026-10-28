@@ -30,7 +30,12 @@ function diag(req) {
   let urlShape = "-";
   try { const u = process.env.ANTHROPIC_BASE_URL; if (u) urlShape = new URL(u).protocol; } catch { urlShape = "bad"; }
   calls += 1;
-  return `diag call=${calls} ageMs=${Date.now() - BOOT} ua=${(req.headers.get("user-agent") || "").slice(0, 60)} process.env=[${p}] Netlify.env=[${ne}] aiNames=[${aiNames}] baseProto=${urlShape} ai=${Boolean(aiProvider())}`;
+  const e = process.env;
+  const gu = (e.NETLIFY_AI_GATEWAY_URL || "").replace(/\/+$/, "");
+  const ab = (e.ANTHROPIC_BASE_URL || "").replace(/\/+$/, "");
+  // Booleans and the URL path suffix only; the gateway URL is not a secret, keys are never printed.
+  const pair = `keySame=${e.ANTHROPIC_API_KEY === e.NETLIFY_AI_GATEWAY_KEY} baseStartsGw=${Boolean(gu) && ab.startsWith(gu)} baseSuffix=${gu && ab.startsWith(gu) ? ab.slice(gu.length) || "(none)" : "?"} baseRegexOk=${/^https:\/\/[^\s]+$/.test(e.ANTHROPIC_BASE_URL || "")}`;
+  return `diag call=${calls} ageMs=${Date.now() - BOOT} ua=${(req.headers.get("user-agent") || "").slice(0, 60)} process.env=[${p}] Netlify.env=[${ne}] aiNames=[${aiNames}] baseProto=${urlShape} ai=${Boolean(aiProvider())} ${pair}`;
 }
 
 export default async (req) => {
